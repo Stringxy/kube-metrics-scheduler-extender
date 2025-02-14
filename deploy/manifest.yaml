@@ -1,0 +1,109 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-metrics-scheduler-extender
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-metrics-scheduler-extender
+subjects:
+  - kind: ServiceAccount
+    name: kube-metrics-scheduler-extender
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-metrics-scheduler-extender
+  namespace: kube-system
+data:
+  kube-metrics-scheduler-extender.yaml: |
+    apiVersion: kubescheduler.config.k8s.io/v1
+    kind: KubeSchedulerConfiguration
+    profiles:
+      - schedulerName: kube-metrics-scheduler-extender
+    leaderElection:
+      leaderElect: false
+    extenders:
+    - urlPrefix: "http://kube-metrics-scheduler-extender.kube-system.svc:8001/scheduler"
+      enableHTTPS: false
+      filterVerb: "filter"
+      prioritizeVerb: "prioritize"
+      preemptVerb: "preemption"
+      bindVerb: "bind"
+      weight: 1
+      nodeCacheCapable: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    component: kube-metrics-scheduler-extender
+    tier: control-plane
+  name: kube-metrics-scheduler-extender
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: kube-metrics-scheduler-extender
+      tier: control-plane
+  template:
+    metadata:
+      labels:
+        component: kube-metrics-scheduler-extender
+        tier: control-plane
+    spec:
+      serviceAccountName: kube-metrics-scheduler-extender
+      containers:
+        - name: kube-scheduler
+          image: registry.cn-hangzhou.aliyuncs.com/google_containers/kube-scheduler:v1.28.2
+          command:
+            - kube-scheduler
+            - --config=/etc/kubernetes/kube-metrics-scheduler-extender.yaml
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 10259
+              scheme: HTTPS
+            initialDelaySeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 10259
+              scheme: HTTPS
+          resources:
+            requests:
+              cpu: '0.1'
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/kubernetes
+        - name: kube-metrics-scheduler-extender
+          image: 192.168.110.64:5000/library/kube-metrics-scheduler-extender:v0.0.1
+          ports:
+            - containerPort: 8001
+      volumes:
+        - name: config-volume
+          configMap:
+            name: kube-metrics-scheduler-extender
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-metrics-scheduler-extender
+  labels:
+    component: kube-metrics-scheduler-extender
+  namespace: kube-system
+spec:
+  ports:
+    - port: 8001
+      name: http
+      targetPort: 8001
+  selector:
+    component: kube-metrics-scheduler-extender
