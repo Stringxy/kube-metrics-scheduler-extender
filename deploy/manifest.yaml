@@ -38,7 +38,7 @@ data:
       preemptVerb: "preemption"
       bindVerb: "bind"
       weight: 1
-      nodeCacheCapable: true
+      nodeCacheCapable: false
 ---
 apiVersion: apps/v1
 kind: Deployment

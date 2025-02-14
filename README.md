@@ -162,6 +162,32 @@ kubectl logs -f --tail 500 kube-metrics-scheduler-extender-7b7cf4f9c8-jg8zs -c k
 
 创建一个 Deployment 并指定使用上一步中部署的 Scheduler，然后测试会调度到哪个节点上。
 ```bash
-kubectl apply -f deploy/deploy-test.yaml
+root@k8s-master:/home/xiaoyao/kube/xy-github/kube-metrics-scheduler-extender/deploy# kubectl apply -f deploy-test.yaml 
+deployment.apps/test created
+root@k8s-master:/home/xiaoyao/kube/xy-github/kube-metrics-scheduler-extender/deploy# kubectl get po
+NAME                    READY   STATUS    RESTARTS   AGE
+test-8666bdf76f-ktd8g   0/1     Pending   0          6s
+# 查看pod Events,没有符合带有label的节点，pod将不被调度
+Events:
+  Type     Reason            Age    From                             Message
+  ----     ------            ----   ----                             -------
+  Warning  FailedScheduling  6m19s  kube-metrics-scheduler-extender  Post "http://kube-metrics-scheduler-extender.kube-system.svc:8001/scheduler/filter": EOF
+  Warning  FailedScheduling  76s    kube-metrics-scheduler-extender  Post "http://kube-metrics-scheduler-extender.kube-system.svc:8001/scheduler/filter": EOF
+  Warning  FailedScheduling  51s    kube-metrics-scheduler-extender  Post "http://kube-metrics-scheduler-extender.kube-system.svc:8001/scheduler/filter": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+  Warning  FailedScheduling  50s    kube-metrics-scheduler-extender  all node do not have label filter.xy.com
+# 给节点添加标签，pod将能成功调度，因集群节点只有一个节点满足filter，故不走prioritize
+kubectl  label node k8s-node1 filter.xy.com=true
+# 若给其他节点也打上标签 会走prioritize
+kubectl  label node k8s-node2 filter.xy.com=true
+# 此时会发现虽然可以正常调度，但extender会报错，因为集群没有安装
+E0214 06:46:25.480282       1 client.go:61] the server could not find the requested resource (get nodes.metrics.k8s.io)
+E0214 06:46:25.480355       1 prioritize.go:18] Failed to get node metrics: the server could not find the requested resource (get nodes.metrics.k8s.io)
+# 通过以下命令安装metrics server，具体请参考文档https://blog.csdn.net/u011837804/article/details/128487211
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+# 删除pod后重新调度，查看extender日志，发现成功获取metrics指标
+I0214 07:29:54.650718       1 prioritize.go:35] Node [ k8s-master ] Cpu Usage Value: 264, Score: -196
+I0214 07:29:54.650725       1 prioritize.go:35] Node [ k8s-node1 ] Cpu Usage Value: 87, Score: -19
+I0214 07:29:54.650728       1 prioritize.go:35] Node [ k8s-node2 ] Cpu Usage Value: 67, Score: 1
 ```
+
 
